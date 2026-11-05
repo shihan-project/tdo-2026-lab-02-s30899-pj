@@ -216,3 +216,8 @@ a nie rozwiązaniem zadania CI.
 
 Kod pochodzi z [publicznych materiałów kursu, rewizja `ccc9850`](https://github.com/PJMPR/TDO-lecures/tree/ccc985008e51da48bbdf7a6d5fd889bb65383e60/projects/docker-lab-starter).
 Repozytorium ma niezależną historię i zawiera wyłącznie czysty stan początkowy zajęć 2.
+
+## CI
+
+Projekt wykorzystuje GitHub Actions do automatycznej weryfikacji zmian.
+Workflow uruchamia się po pushu na `main` oraz przy Pull Requestach kierowanych do `main`.
