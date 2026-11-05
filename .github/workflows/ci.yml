@@ -7,9 +7,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
+env:
+  BUILD_CONFIGURATION: Release
+
 jobs:
-  hello:
+  backend:
+    name: Backend
     runs-on: ubuntu-24.04
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -19,25 +24,19 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .nvmrc
-          package-manager-cache: false
-
-      - name: Say hello
-        run: echo "Hello from GitHub Actions!"
-
-      - name: Show environment
+      - name: Verify lockfiles
         run: |
-          pwd
-          uname -a
+          test -f backend/packages.lock.json
+          test -f backend.tests/packages.lock.json
 
-      - name: Verify project and tool versions
-        run: |
-          test -f MissionControl.slnx
-          test -f global.json
-          test -f .nvmrc
-          dotnet --version
-          node --version
-          npm --version
+      - name: Check Docker
+        run: docker version
+
+      - name: Restore dependencies
+        run: dotnet restore MissionControl.slnx --locked-mode
+
+      - name: Build solution
+        run: dotnet build MissionControl.slnx --configuration "$BUILD_CONFIGURATION"
+
+      - name: Test backend
+        run: dotnet test MissionControl.slnx --configuration "$BUILD_CONFIGURATION" --settings backend.tests/test.runsettings
