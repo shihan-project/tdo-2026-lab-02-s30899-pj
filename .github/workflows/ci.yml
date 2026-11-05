@@ -57,7 +57,7 @@ jobs:
         run: dotnet restore MissionControl.slnx --locked-mode
 
       - name: Build backend
-        run: dotnet build backend/backend.csproj --configuration Release --no-restore
+        run: dotnet build backend/MissionControl.Api.csproj --configuration Release --no-restore
 
       - name: Test backend
-        run: dotnet test backend.tests/backend.tests.csproj --configuration Release --no-build --logger "trx;LogFileName=backend.trx"
+        run: dotnet test backend.tests/MissionControl.Api.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=backend.trx"
