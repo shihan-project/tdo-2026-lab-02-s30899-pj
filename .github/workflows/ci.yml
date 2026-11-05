@@ -7,6 +7,20 @@ jobs:
   hello:
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
       - name: Say hello
         run: echo "Hello from GitHub Actions!"
 
@@ -14,3 +28,12 @@ jobs:
         run: |
           pwd
           uname -a
+
+      - name: Verify project and tool versions
+        run: |
+          test -f MissionControl.slnx
+          test -f global.json
+          test -f .nvmrc
+          dotnet --version
+          node --version
+          npm --version
