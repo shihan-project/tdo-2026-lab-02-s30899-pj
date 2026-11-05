@@ -41,3 +41,23 @@ jobs:
           dotnet --version
           node --version
           npm --version
+
+  backend:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore dependencies
+        run: dotnet restore MissionControl.slnx --locked-mode
+
+      - name: Build backend
+        run: dotnet build backend/backend.csproj --configuration Release --no-restore
+
+      - name: Test backend
+        run: dotnet test backend.tests/backend.tests.csproj --configuration Release --no-build --logger "trx;LogFileName=backend.trx"
