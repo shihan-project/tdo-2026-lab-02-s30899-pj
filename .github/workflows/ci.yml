@@ -25,11 +25,6 @@ jobs:
           node-version-file: .nvmrc
           package-manager-cache: false
 
-      - name: Intentional failure
-        run: |
-          echo "This step should fail"
-          exit 1
-
       - name: Say hello
         run: echo "Hello from GitHub Actions!"
 
