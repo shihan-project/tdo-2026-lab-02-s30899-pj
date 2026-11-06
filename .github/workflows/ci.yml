@@ -47,6 +47,23 @@ jobs:
           test -f backend/packages.lock.json
           test -f backend.tests/packages.lock.json
 
+      - name: Cache NuGet
+        id: nuget-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ci-nuget-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json') }}-${{ hashFiles('backend/packages.lock.json', 'backend.tests/packages.lock.json') }}
+          restore-keys: |
+            ci-nuget-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json') }}-
+
+      - name: Sprawdź wynik cache NuGet
+        run: |
+          if [ "${{ steps.nuget-cache.outputs.cache-hit }}" = "true" ]; then
+            echo "Dokładne trafienie cache NuGet"
+          else
+            echo "Brak dokładnego trafienia cache NuGet; sprawdź log przywracania"
+          fi
+
       - name: Check Docker
         run: docker version
 
@@ -87,11 +104,30 @@ jobs:
           node-version-file: .nvmrc
           package-manager-cache: false
 
-      - name: Verify lockfile
-        run: test -f package-lock.json
+      - name: Verify frontend files
+        run: |
+          test -f ../.nvmrc
+          test -f package-lock.json
+
+      - name: Cache npm
+        id: npm-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.nvmrc') }}-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.nvmrc') }}-
+
+      - name: Sprawdź wynik cache npm
+        run: |
+          if [ "${{ steps.npm-cache.outputs.cache-hit }}" = "true" ]; then
+            echo "Dokładne trafienie cache npm"
+          else
+            echo "Brak dokładnego trafienia cache npm; sprawdź log przywracania"
+          fi
 
       - name: Install dependencies
-        run: npm ci
+        run: time npm ci
 
       - name: Build frontend
         run: npm run build
