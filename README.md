@@ -221,3 +221,7 @@ Repozytorium ma niezależną historię i zawiera wyłącznie czysty stan począt
 
 Projekt wykorzystuje GitHub Actions do automatycznej weryfikacji zmian.
 Workflow uruchamia się po pushu na `main` oraz przy Pull Requestach kierowanych do `main`.
+
+## Ochrona gałęzi
+
+Zmiany wprowadzane są przez Pull Request.
