@@ -217,11 +217,37 @@ a nie rozwiązaniem zadania CI.
 Kod pochodzi z [publicznych materiałów kursu, rewizja `ccc9850`](https://github.com/PJMPR/TDO-lecures/tree/ccc985008e51da48bbdf7a6d5fd889bb65383e60/projects/docker-lab-starter).
 Repozytorium ma niezależną historię i zawiera wyłącznie czysty stan początkowy zajęć 2.
 
+---
+
+# Dokumentacja realizacji laboratorium
+
 ## CI
 
 Projekt wykorzystuje GitHub Actions do automatycznej weryfikacji zmian.
+
 Workflow uruchamia się po pushu na `main` oraz przy Pull Requestach kierowanych do `main`.
 
 ## Ochrona gałęzi
 
 Zmiany wprowadzane są przez Pull Request.
+
+## Eksperyment z cache CI
+
+W workflow zastosowano `actions/cache@v4`:
+- **npm:** cache `~/.npm`, bez cache `node_modules`.
+- **NuGet:** cache `~/.nuget/packages`.
+- Klucze uwzględniają system, architekturę, wersję Node/.NET oraz odpowiednie pliki lock.
+- `restore-keys` umożliwia użycie starszego cache po zmianie zależności.
+
+### Wyniki pomiarów `npm ci`
+
+| Uruchomienie | Zachowanie cache | Czas `npm ci` |
+|---|---|---:|
+| 1 | Cold cache (`v1`) | 7,03 s |
+| 2 | Dokładne trafienie (`v1`) | 5,31 s |
+| 3 | Odtworzenie przez `restore-keys` po zmianie lockfile | 7,44 s |
+| 4 | Cold cache (`v2`) | 9,43 s |
+
+Pomiary wykonano za pomocą `time npm ci`, porównując czas rzeczywisty (`real`). Dokładne trafienie cache było najszybsze. Po zmianie lockfile użyto poprzedniego cache przez `restore-keys`, natomiast nowy namespace wymusił pobranie zależności bez wcześniejszego cache.
+
+Wyniki pokazują poprawne działanie mechanizmu cache, choć pojedyncze pomiary mogą się różnić ze względu na obciążenie runnerów i warunki sieciowe.
