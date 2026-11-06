@@ -52,9 +52,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ci-nuget-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json') }}-${{ hashFiles('backend/packages.lock.json', 'backend.tests/packages.lock.json') }}
+          key: ci-nuget-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json') }}-${{ hashFiles('backend/packages.lock.json', 'backend.tests/packages.lock.json') }}
           restore-keys: |
-            ci-nuget-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json') }}-
+            ci-nuget-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json') }}-
 
       - name: Sprawdź wynik cache NuGet
         run: |
@@ -114,9 +114,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.nvmrc') }}-${{ hashFiles('frontend/package-lock.json') }}
+          key: ci-npm-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.nvmrc') }}-${{ hashFiles('frontend/package-lock.json') }}
           restore-keys: |
-            ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.nvmrc') }}-
+            ci-npm-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.nvmrc') }}-
 
       - name: Sprawdź wynik cache npm
         run: |
