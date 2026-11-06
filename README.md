@@ -241,13 +241,13 @@ W workflow zastosowano `actions/cache@v4`:
 
 ### Wyniki pomiarów `npm ci`
 
-| Uruchomienie | Zachowanie cache | Czas |
+| Uruchomienie | Zachowanie cache | Czas `npm ci` |
 |---|---|---:|
-| 1 | Cold cache (`v1`) | 1 min 9 s |
-| 2 | Dokładne trafienie (`v1`) | 1 min 6 s |
-| 3 | Odtworzenie przez `restore-keys` po zmianie lockfile | 1 min 16 s |
-| 4 | Cold cache (`v2`) | 1 min 5 s |
+| 1 | Cold cache (`v1`) | 7,03 s |
+| 2 | Dokładne trafienie (`v1`) | 5,31 s |
+| 3 | Odtworzenie przez `restore-keys` po zmianie lockfile | 7,44 s |
+| 4 | Cold cache (`v2`) | 9,43 s |
 
-Zmiana zależności `tslib` z `2.8.1` na `2.9.1` spowodowała zmianę klucza npm i użycie cache zapasowego. Zmiana namespace z `v1` na `v2` uniemożliwiła dostęp do poprzednich cache npm i NuGet. Build i testy zakończyły się poprawnie.
+Pomiary wykonano za pomocą `time npm ci`, porównując czas rzeczywisty (`real`). Dokładne trafienie cache było najszybsze. Po zmianie lockfile użyto poprzedniego cache przez `restore-keys`, natomiast nowy namespace wymusił pobranie zależności bez wcześniejszego cache.
 
-Różnice czasów były niewielkie, dlatego nie potwierdzają jednoznacznie przyspieszenia instalacji.
+Wyniki pokazują poprawne działanie mechanizmu cache, choć pojedyncze pomiary mogą się różnić ze względu na obciążenie runnerów i warunki sieciowe.
