@@ -10,10 +10,6 @@ on:
 permissions:
   contents: read
 
-env:
-  BUILD_CONFIGURATION: Release
-  LAB_LABEL: ${{ vars.LAB_LABEL }}
-
 jobs:
   changes:
     name: Detect changed components
@@ -216,77 +212,11 @@ jobs:
 
   backend:
     name: Backend
-    runs-on: ubuntu-24.04
-
-    outputs:
-      report_name: ${{ steps.backend-check.outputs.report_name }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Pokaż etykietę projektu
-        run: |
-          echo "Uruchamiam CI dla projektu: $LAB_LABEL"
-
-      - name: Sprawdź obecność sekretu ćwiczeniowego
-        env:
-          LAB_DEMO_TOKEN: ${{ secrets.LAB_DEMO_TOKEN }}
-        run: |
-          if [ -n "$LAB_DEMO_TOKEN" ]; then
-            printf 'Sekret cwiczeniowy skonfigurowany\n'
-          else
-            printf 'Brak sekretu; testy nie wymagaja go do pracy\n'
-          fi
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          global-json-file: global.json
-
-      - name: Cache NuGet
-        id: nuget-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ci-nuget-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json') }}-${{ hashFiles('backend/packages.lock.json', 'backend.tests/packages.lock.json') }}
-          restore-keys: |
-            ci-nuget-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json') }}-
-
-      - name: Sprawdź wynik cache NuGet
-        run: |
-          if [ "${{ steps.nuget-cache.outputs.cache-hit }}" = "true" ]; then
-            echo "Dokładne trafienie cache NuGet"
-          else
-            echo "Brak dokładnego trafienia cache NuGet; sprawdź log przywracania"
-          fi
-
-      - name: Check Docker
-        run: docker version
-
-      - name: Backend check
-        id: backend-check
-        uses: ./.github/actions/backend-check
-        with:
-          configuration: ${{ env.BUILD_CONFIGURATION }}
-
-      - name: Read report metadata
-        if: ${{ always() }}
-        env:
-          REPORT_NAME: ${{ steps.backend-check.outputs.report_name }}
-        shell: bash
-        run: |
-          printf 'Report: %s\n' "$REPORT_NAME"
-          printf 'Component: %s\n' "$REPORT_COMPONENT"
-
-      - name: Zachowaj raporty backendu
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.backend-check.outputs.report_name }}
-          path: TestResults/backend.trx
-          retention-days: 7
-          if-no-files-found: warn
+    uses: ./.github/workflows/backend.yml
+    with:
+      configuration: Release
+      publish_reports: true
+      report_retention_days: 7
 
   frontend:
     name: Frontend
