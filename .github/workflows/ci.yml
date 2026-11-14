@@ -219,26 +219,11 @@ jobs:
     runs-on: ubuntu-24.04
 
     outputs:
-      report_name: ${{ steps.metadata.outputs.report_name }}
+      report_name: ${{ steps.backend-check.outputs.report_name }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Prepare report metadata
-        id: metadata
-        shell: bash
-        run: |
-          printf 'report_name=backend-tests-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-          printf 'REPORT_COMPONENT=backend\n' >> "$GITHUB_ENV"
-
-      - name: Read report metadata
-        env:
-          REPORT_NAME: ${{ steps.metadata.outputs.report_name }}
-        shell: bash
-        run: |
-          printf 'Report: %s\n' "$REPORT_NAME"
-          printf 'Component: %s\n' "$REPORT_COMPONENT"
 
       - name: Pokaż etykietę projektu
         run: |
@@ -258,11 +243,6 @@ jobs:
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
-
-      - name: Verify lockfiles
-        run: |
-          test -f backend/packages.lock.json
-          test -f backend.tests/packages.lock.json
 
       - name: Cache NuGet
         id: nuget-cache
@@ -284,20 +264,26 @@ jobs:
       - name: Check Docker
         run: docker version
 
-      - name: Restore dependencies
-        run: dotnet restore MissionControl.slnx --locked-mode
+      - name: Backend check
+        id: backend-check
+        uses: ./.github/actions/backend-check
+        with:
+          configuration: ${{ env.BUILD_CONFIGURATION }}
 
-      - name: Build solution
-        run: dotnet build MissionControl.slnx --configuration "$BUILD_CONFIGURATION"
-
-      - name: Test backend
-        run: dotnet test MissionControl.slnx --configuration "$BUILD_CONFIGURATION" --settings backend.tests/test.runsettings
+      - name: Read report metadata
+        if: ${{ always() }}
+        env:
+          REPORT_NAME: ${{ steps.backend-check.outputs.report_name }}
+        shell: bash
+        run: |
+          printf 'Report: %s\n' "$REPORT_NAME"
+          printf 'Component: %s\n' "$REPORT_COMPONENT"
 
       - name: Zachowaj raporty backendu
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.metadata.outputs.report_name }}
+          name: ${{ steps.backend-check.outputs.report_name }}
           path: TestResults/backend.trx
           retention-days: 7
           if-no-files-found: warn
