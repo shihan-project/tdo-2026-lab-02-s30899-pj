@@ -151,7 +151,7 @@ jobs:
             --arg sha "$GITHUB_SHA" \
             --argjson run_id "$GITHUB_RUN_ID" \
             --argjson run_attempt "$GITHUB_RUN_ATTEMPT" \
-            '{schema_version: 2, sha: $sha, run_id: $run_id, run_attempt: $run_attempt}' \
+            '{schema_version: 1, sha: $sha, run_id: $run_id, run_attempt: $run_attempt}' \
             > ci-metadata/metadata.json
           cat ci-metadata/metadata.json
 
