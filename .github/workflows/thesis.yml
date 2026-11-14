@@ -1,0 +1,278 @@
+name: Thesis PDF
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REPOSITORY: pantadeusz/pjatk_latex
+  UPSTREAM_SHA: e660b9ee1e637a843c9084774abdc9b3ecdaae4c
+
+jobs:
+  build:
+    name: Build thesis PDF
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+      artifact_name: ${{ steps.source.outputs.artifact_name }}
+
+    steps:
+      # PR builds the exact head commit, push builds the pushed commit.
+      - name: Resolve source commit
+        id: source
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            source_sha="$PR_HEAD_SHA"
+          else
+            source_sha="$GITHUB_SHA"
+          fi
+
+          if ! [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            printf '::error title=thesis::Nieprawidłowy SHA źródła.\n'
+            exit 1
+          fi
+
+          printf 'source_sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"
+          printf 'artifact_name=thesis-pdf-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          printf 'Source SHA: %s\n' "$source_sha"
+          printf 'Upstream: %s@%s\n' "$UPSTREAM_REPOSITORY" "$UPSTREAM_SHA"
+
+      - name: Checkout student sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.source.outputs.source_sha }}
+          persist-credentials: false
+
+      - name: Checkout upstream template
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.UPSTREAM_REPOSITORY }}
+          ref: ${{ env.UPSTREAM_SHA }}
+          path: upstream-latex
+          persist-credentials: false
+
+      - name: Install LaTeX
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y latexmk biber texlive-latex-extra \
+            texlive-bibtex-extra texlive-fonts-recommended \
+            texlive-lang-polish texlive-science
+
+      - name: Compile thesis
+        shell: bash
+        run: |
+          cp upstream-latex/sprz.cls thesis/sprz.cls
+          cd thesis
+          rm -f engineer.pdf
+          latexmk -norc -pdf -interaction=nonstopmode -halt-on-error -file-line-error -no-shell-escape engineer.tex
+          test -s engineer.pdf
+
+      - name: Upload thesis PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.source.outputs.artifact_name }}
+          path: thesis/engineer.pdf
+          retention-days: 7
+          if-no-files-found: error
+
+  release-decision:
+    name: Release decision
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+
+    outputs:
+      mode: ${{ steps.decide.outputs.mode }}
+
+    steps:
+      - name: Decide publication mode
+        id: decide
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            // mode: prerelease | release | none. Anything unconfirmed is none.
+            const decide = (mode, reason) => {
+              core.setOutput('mode', mode);
+              if (mode === 'none') {
+                core.notice(reason, { title: 'Publikacja pominięta (tylko artefakt)' });
+              } else {
+                core.info(reason);
+              }
+            };
+
+            if (context.eventName === 'push') {
+              if (context.ref === 'refs/heads/main') {
+                return decide('release', 'Push na main: pełne wydanie po udanej kompilacji.');
+              }
+              return decide('none', `Push na ${context.ref}: brak wydania.`);
+            }
+
+            if (context.eventName !== 'pull_request') {
+              return decide('none', `Zdarzenie ${context.eventName}: brak wydania.`);
+            }
+
+            const pr = context.payload.pull_request;
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+
+            if (pr.base.ref !== 'main') {
+              return decide('none', `Baza PR to ${pr.base.ref}, nie main: brak wydania.`);
+            }
+            if (pr.head.repo?.full_name !== repository) {
+              return decide('none', 'PR z forka: kompilacja i artefakt bez wydania.');
+            }
+            if (pr.user.login === 'dependabot[bot]') {
+              return decide('none', 'PR Dependabota: kompilacja i artefakt bez wydania.');
+            }
+
+            try {
+              // 1. Every changed file of the PR (paginated, completeness checked).
+              const { data: current } = await github.rest.pulls.get({
+                ...context.repo,
+                pull_number: pr.number
+              });
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                ...context.repo,
+                pull_number: pr.number,
+                per_page: 100
+              });
+              if (files.length !== current.changed_files) {
+                return decide('none', `Niekompletna lista plików PR (${files.length}/${current.changed_files}): tylko artefakt.`);
+              }
+
+              const workflowChanges = files
+                .flatMap(file => [file.filename, file.previous_filename].filter(Boolean))
+                .filter(path => path.startsWith('.github/workflows/'));
+              if (workflowChanges.length > 0) {
+                return decide('none', 'PR zmienia definicje workflow: tylko artefakt. Po merge utwórz nowy PR zmieniający wyłącznie pliki TeX.');
+              }
+
+              // 2. The .github/workflows tree of the built commit must equal current main.
+              const workflowsTree = async ref => {
+                const { data } = await github.rest.repos.getContent({
+                  ...context.repo,
+                  path: '.github',
+                  ref
+                });
+                const entry = Array.isArray(data)
+                  ? data.find(item => item.name === 'workflows' && item.type === 'dir')
+                  : undefined;
+                if (!entry) {
+                  throw new Error(`brak katalogu .github/workflows w ${ref}`);
+                }
+                return entry.sha;
+              };
+
+              const { data: main } = await github.rest.repos.getBranch({
+                ...context.repo,
+                branch: 'main'
+              });
+              const [headTree, mainTree] = await Promise.all([
+                workflowsTree(pr.head.sha),
+                workflowsTree(main.commit.sha)
+              ]);
+
+              core.info(`Workflows tree: PR head ${headTree}, main ${mainTree}`);
+              if (headTree !== mainTree) {
+                return decide('none', 'Katalog .github/workflows w PR różni się od aktualnego main (np. PR starszy niż main): tylko artefakt. Zaktualizuj gałąź PR.');
+              }
+            } catch (error) {
+              return decide('none', `Nie udało się potwierdzić zgodności workflow z main (${error.message}): tylko artefakt.`);
+            }
+
+            return decide('prerelease', 'PR z tego repozytorium, workflow zgodne z main: prerelease po udanej kompilacji.');
+
+  prerelease:
+    name: Publish prerelease
+    needs: [build, release-decision]
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      needs.release-decision.outputs.mode == 'prerelease'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download thesis PDF
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: release
+
+      - name: Verify PDF
+        shell: bash
+        run: |
+          test -s release/engineer.pdf
+          [ "$(head -c 5 release/engineer.pdf)" = "%PDF-" ]
+
+      - name: Create prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          tag="thesis-pr-${PR_NUMBER}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          title="Praca dyplomowa – PR #${PR_NUMBER} (run ${GITHUB_RUN_ID}, attempt ${GITHUB_RUN_ATTEMPT})"
+          notes=$(printf 'Prerelease PDF z PR #%s.\n\n- Źródło: %s\n- Szablon: %s@%s\n- Run: %s/%s/actions/runs/%s (attempt %s)\n' \
+            "$PR_NUMBER" "$SOURCE_SHA" "$UPSTREAM_REPOSITORY" "$UPSTREAM_SHA" \
+            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT")
+
+          gh release create "$tag" "release/engineer.pdf#Praca dyplomowa PDF" \
+            --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" \
+            --title "$title" --notes "$notes" --prerelease --latest=false
+
+  release:
+    name: Publish release
+    needs: [build, release-decision]
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.release-decision.outputs.mode == 'release'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download thesis PDF
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: release
+
+      - name: Verify PDF
+        shell: bash
+        run: |
+          test -s release/engineer.pdf
+          [ "$(head -c 5 release/engineer.pdf)" = "%PDF-" ]
+
+      - name: Create release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          tag="thesis-v1.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          title="Praca dyplomowa v1.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          notes=$(printf 'Pełne wydanie PDF z main.\n\n- Źródło: %s\n- Szablon: %s@%s\n- Run: %s/%s/actions/runs/%s (attempt %s)\n' \
+            "$SOURCE_SHA" "$UPSTREAM_REPOSITORY" "$UPSTREAM_SHA" \
+            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT")
+
+          gh release create "$tag" "release/engineer.pdf#Praca dyplomowa PDF" \
+            --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" \
+            --title "$title" --notes "$notes"
