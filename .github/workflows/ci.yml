@@ -15,6 +15,205 @@ env:
   LAB_LABEL: ${{ vars.LAB_LABEL }}
 
 jobs:
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+
+    outputs:
+      backend: ${{ steps.detect.outputs.backend }}
+      frontend: ${{ steps.detect.outputs.frontend }}
+      file_count: ${{ steps.detect.outputs.file_count }}
+
+    steps:
+      - name: Detect changed components
+        id: detect
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            // Without a PR number, test both components conservatively.
+            if (context.eventName !== 'pull_request') {
+              core.setOutput('backend', 'true');
+              core.setOutput('frontend', 'true');
+              core.setOutput('file_count', '0');
+              core.info('No pull request; both components require checks.');
+              return;
+            }
+
+            const pullNumber = context.issue.number;
+
+            // Read the expected number of changed files.
+            const pull = await github.rest.pulls.get({
+              ...context.repo,
+              pull_number: pullNumber
+            });
+
+            const expectedCount = pull.data.changed_files;
+
+            if (!Number.isInteger(expectedCount) || expectedCount < 0) {
+              throw new Error('Invalid changed_files count returned by GitHub API.');
+            }
+
+            // GitHub's changed-files API is limited to 3000 files.
+            if (expectedCount > 3000) {
+              throw new Error('Pull request exceeds the 3000-file API limit.');
+            }
+
+            // Fetch every page, not just the first 100 files.
+            const files = await github.paginate(
+              github.rest.pulls.listFiles,
+              {
+                ...context.repo,
+                pull_number: pullNumber,
+                per_page: 100
+              }
+            );
+
+            if (!Array.isArray(files) || files.length !== expectedCount) {
+              throw new Error(
+                `Incomplete file list: expected ${expectedCount}, received ${files?.length}.`
+              );
+            }
+
+            const paths = files.flatMap(file =>
+              [file.filename, file.previous_filename].filter(Boolean)
+            );
+
+            let backend = false;
+            let frontend = false;
+
+            for (const path of paths) {
+              // Automation changes may affect both components.
+              if (path.startsWith('.github/')) {
+                backend = true;
+                frontend = true;
+                continue;
+              }
+
+              // Backend code and shared .NET configuration.
+              if (
+                path.startsWith('backend/') ||
+                path.startsWith('backend.tests/') ||
+                path === 'MissionControl.slnx' ||
+                path === 'global.json' ||
+                path === 'NuGet.Config' ||
+                path === 'Directory.Packages.props' ||
+                /^Directory\.Build\./.test(path) ||
+                path === '.config/dotnet-tools.json'
+              ) {
+                backend = true;
+                continue;
+              }
+
+              // Frontend code and Node.js version configuration.
+              if (
+                path.startsWith('frontend/') ||
+                path === '.nvmrc'
+              ) {
+                frontend = true;
+                continue;
+              }
+
+              // Explicitly classified repository-wide documentation
+              // and metadata that do not require component builds.
+              if (
+                path === 'README.md' ||
+                path.startsWith('docs/') ||
+                path === '.env.example' ||
+                path === 'LICENSE' ||
+                path === '.gitignore' ||
+                path === '.editorconfig'
+              ) {
+                continue;
+              }
+
+              // Unknown paths must never silently skip both components.
+              core.warning(`Unknown path; requiring both checks: ${path}`);
+              backend = true;
+              frontend = true;
+            }
+
+            core.setOutput('backend', String(backend));
+            core.setOutput('frontend', String(frontend));
+            core.setOutput('file_count', String(files.length));
+
+            core.info(`Changed files: ${files.length}`);
+            core.info(`Backend required: ${backend}`);
+            core.info(`Frontend required: ${frontend}`);
+
+  pr-comment:
+    name: PR change summary comment
+    runs-on: ubuntu-24.04
+    needs: [changes]
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Publish or update PR summary
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          BACKEND_REQUIRED: ${{ needs.changes.outputs.backend }}
+          FRONTEND_REQUIRED: ${{ needs.changes.outputs.frontend }}
+          FILE_COUNT: ${{ needs.changes.outputs.file_count }}
+        with:
+          script: |
+            const marker = '<!-- ci-change-detection -->';
+
+            // Validate outputs instead of treating any non-empty string as true.
+            const backend = process.env.BACKEND_REQUIRED;
+            const frontend = process.env.FRONTEND_REQUIRED;
+            const fileCount = process.env.FILE_COUNT;
+
+            if (!['true', 'false'].includes(backend) ||
+                !['true', 'false'].includes(frontend) ||
+                !/^\d+$/.test(fileCount ?? '')) {
+              throw new Error('Invalid change detection outputs.');
+            }
+
+            const body = [
+              marker,
+              '## CI change detection',
+              '',
+              `- Changed files: **${fileCount}**`,
+              `- Backend checks required: **${backend}**`,
+              `- Frontend checks required: **${frontend}**`
+            ].join('\n');
+
+            // Search all issue comments to find our previous comment.
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                ...context.repo,
+                issue_number: context.issue.number,
+                per_page: 100
+              }
+            );
+
+            const previous = comments.find(comment =>
+              comment.user?.login === 'github-actions[bot]' &&
+              comment.body?.includes(marker)
+            );
+
+            if (previous) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: previous.id,
+                body
+              });
+              core.info(`Updated existing comment ${previous.id}.`);
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body
+              });
+              core.info('Created PR change detection comment.');
+            }
+
   backend:
     name: Backend
     runs-on: ubuntu-24.04
