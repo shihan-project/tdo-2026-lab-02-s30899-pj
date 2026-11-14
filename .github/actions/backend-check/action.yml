@@ -1,0 +1,60 @@
+name: Backend check
+description: Weryfikuje lockfiles, wykonuje locked restore, build i testy backendu oraz wylicza nazwę raportu.
+
+inputs:
+  configuration:
+    description: Konfiguracja buildu (Debug lub Release)
+    required: false
+    default: Release
+
+outputs:
+  report_name:
+    description: Nazwa artefaktu z raportem backendu
+    value: ${{ steps.metadata.outputs.report_name }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate configuration
+      shell: bash
+      env:
+        CONFIGURATION: ${{ inputs.configuration }}
+      run: |
+        case "$CONFIGURATION" in
+          Debug|Release)
+            printf 'Configuration: %s\n' "$CONFIGURATION"
+            ;;
+          *)
+            printf '::error title=backend-check::Nieprawidłowa konfiguracja. Dozwolone wartości: Debug, Release.\n'
+            exit 1
+            ;;
+        esac
+
+    - name: Prepare report metadata
+      id: metadata
+      shell: bash
+      run: |
+        printf 'report_name=backend-tests-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+        printf 'REPORT_COMPONENT=backend\n' >> "$GITHUB_ENV"
+
+    - name: Verify lockfiles
+      shell: bash
+      run: |
+        test -f backend/packages.lock.json
+        test -f backend.tests/packages.lock.json
+
+    - name: Restore dependencies
+      shell: bash
+      run: dotnet restore MissionControl.slnx --locked-mode
+
+    - name: Build solution
+      shell: bash
+      env:
+        CONFIGURATION: ${{ inputs.configuration }}
+      run: dotnet build MissionControl.slnx --configuration "$CONFIGURATION"
+
+    - name: Test backend
+      shell: bash
+      env:
+        CONFIGURATION: ${{ inputs.configuration }}
+      run: dotnet test MissionControl.slnx --configuration "$CONFIGURATION" --settings backend.tests/test.runsettings
