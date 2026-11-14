@@ -40,6 +40,15 @@ backendu do reusable workflow z~typowanymi wejściami. Osobny workflow
 artefakt metadanych z~dokładnie wskazanego runu producenta i~sprawdza jego
 schemat oraz zgodność SHA, identyfikatora runu i~numeru próby.
 
+\section{Wydawanie dokumentu PDF}
+
+Ten raport jest kompilowany w~CI przy każdym pull requeście i~każdym pushu na
+gałąź \texttt{main}. Kompilacja ma wyłącznie prawo odczytu, a~klasa szablonu
+jest pobierana z~przypiętej rewizji publicznego repozytorium. Pull request
+zmieniający tylko pliki TeX publikuje wersję wstępną (prerelease), a~push na
+\texttt{main} pełne wydanie. Pull request zmieniający definicje workflow albo
+pochodzący z~forka kończy się samym artefaktem, bez zapisu wydania.
+
 \section{Wyniki}
 
 \begin{tabular}{|l|l|}
