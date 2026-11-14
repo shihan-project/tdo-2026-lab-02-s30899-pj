@@ -268,7 +268,7 @@ jobs:
         id: backend-check
         uses: ./.github/actions/backend-check
         with:
-          configuration: ${{ env.BUILD_CONFIGURATION }}
+          configuration: Production
 
       - name: Read report metadata
         if: ${{ always() }}
