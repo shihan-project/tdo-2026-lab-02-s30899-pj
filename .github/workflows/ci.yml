@@ -19,6 +19,9 @@ jobs:
     name: Backend
     runs-on: ubuntu-24.04
 
+    outputs:
+      report_name: ${{ steps.metadata.outputs.report_name }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -104,6 +107,9 @@ jobs:
     name: Frontend
     runs-on: ubuntu-24.04
 
+    outputs:
+      report_name: ${{ steps.metadata.outputs.report_name }}
+
     defaults:
       run:
         shell: bash
@@ -173,3 +179,44 @@ jobs:
           path: frontend/test-results/
           retention-days: 7
           if-no-files-found: warn
+
+  reports-summary:
+    name: Reports summary
+    runs-on: ubuntu-24.04
+    needs: [backend, frontend]
+
+    steps:
+      - name: Check fresh workspace
+        shell: bash
+        run: |
+          if [ -d incoming ]; then
+            echo "Unexpected incoming directory found"
+            exit 1
+          fi
+
+          echo "Workspace is clean; no reports from previous jobs"
+
+      - name: Download backend report
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.backend.outputs.report_name }}
+          path: incoming/backend
+
+      - name: Download frontend report
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.frontend.outputs.report_name }}
+          path: incoming/frontend
+
+      - name: List downloaded reports
+        shell: bash
+        run: |
+          echo "Downloaded files:"
+          find incoming -type f -print
+
+          echo "Report summary:"
+          printf 'Backend files: '
+          find incoming/backend -type f | wc -l
+
+          printf 'Frontend files: '
+          find incoming/frontend -type f | wc -l
