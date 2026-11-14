@@ -116,6 +116,7 @@ jobs:
               if (
                 path === 'README.md' ||
                 path.startsWith('docs/') ||
+                path.startsWith('thesis/') ||
                 path === '.env.example' ||
                 path === 'LICENSE' ||
                 path === '.gitignore' ||

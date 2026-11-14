@@ -1,0 +1,65 @@
+\documentclass{sprz}
+
+\begin{document}
+
+\tableofcontents
+
+\chapter{Raport z laboratorium CI}
+
+\section{Cel}
+
+Celem laboratorium było zbudowanie potoku ciągłej integracji dla projektu
+Mission Control, który składa się z backendu w~.NET oraz frontendu w~Angularze.
+Potok ma szybko informować o~regresjach, nie marnować czasu runnerów na
+niepotrzebne buildy i~jednoznacznie odpowiadać na pytanie, czy zmianę można
+scalić do gałęzi \texttt{main}.
+
+\section{Detekcja zmienionych komponentów}
+
+Job \texttt{changes} pobiera przez API GitHuba pełną, stronicowaną listę plików
+zmienionych w~pull requeście i~klasyfikuje je jako zmiany backendu, frontendu
+albo dokumentacji. Zmiany w~katalogu \texttt{.github} konserwatywnie wymagają
+sprawdzenia obu komponentów, a~nieznana ścieżka nigdy nie daje dwóch wartości
+\texttt{false}. Dla zdarzeń \texttt{push} i~ręcznego startu oba komponenty są
+zawsze sprawdzane.
+
+\section{Jeden zawsze obecny gate}
+
+Komponenty uruchamiają się warunkowo, dlatego ochrona gałęzi \texttt{main} nie
+wymaga już ich checków bezpośrednio. Wymagany jest tylko job
+\texttt{ci-required}, który ocenia wynik detekcji oraz obu komponentów.
+Komponent wymagany musi zakończyć się sukcesem, a~niewymagany musi zostać
+pominięty. Każdy inny wynik, także błąd samej detekcji, daje czerwony gate
+i~blokuje scalenie.
+
+\section{Reużywanie i~osobne uruchomienia}
+
+Procedura backendu została przeniesiona do akcji typu composite, a~cały job
+backendu do reusable workflow z~typowanymi wejściami. Osobny workflow
+\texttt{Inspect CI} uruchamiany zdarzeniem \texttt{workflow\_run} pobiera
+artefakt metadanych z~dokładnie wskazanego runu producenta i~sprawdza jego
+schemat oraz zgodność SHA, identyfikatora runu i~numeru próby.
+
+\section{Wyniki}
+
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Scenariusz} & \textbf{Wynik gate'a} \\
+\hline
+Zmiana tylko dokumentacji & zielony, oba komponenty pominięte \\
+Zmiana tylko backendu & zielony, frontend pominięty \\
+Zmiana workflow & zielony, oba komponenty uruchomione \\
+Regresja w~backendzie & czerwony, scalenie zablokowane \\
+Uszkodzona detekcja & czerwony, scalenie zablokowane \\
+\hline
+\end{tabular}
+
+\section{Wnioski}
+
+Optymalizacja zakresu uruchamianych jobów nie może zmieniać znaczenia
+komunikatu ,,CI przeszło''. Jeden jednoznaczny gate oddziela politykę scalania
+od liczby faktycznie uruchomionych jobów, a~kontrolowane błędy na osobnych
+gałęziach pozwalają sprawdzić, że każda czerwona ścieżka rzeczywiście blokuje
+scalenie.
+
+\end{document}
