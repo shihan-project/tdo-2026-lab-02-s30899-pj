@@ -1,0 +1,93 @@
+name: Matrix lab
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static_tests:
+    name: Static ${{ matrix.configuration }} (${{ matrix.collect_reports && 'z raportem' || 'bez uploadu' }})
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        configuration: [Debug, Release]
+        collect_reports: [true, false]
+        # Removed combination: Debug without report upload.
+        exclude:
+          - configuration: Debug
+            collect_reports: false
+        # Extra metadata for an existing combination: diagnostics only for Release with reports.
+        include:
+          - configuration: Release
+            collect_reports: true
+            diagnostics: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Diagnostics
+        if: ${{ matrix.diagnostics }}
+        shell: bash
+        run: dotnet --info
+
+      - name: Backend check
+        id: backend-check
+        uses: ./.github/actions/backend-check
+        with:
+          configuration: ${{ matrix.configuration }}
+
+      - name: Upload test report
+        if: ${{ always() && matrix.collect_reports }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-${{ matrix.configuration }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: TestResults/backend.trx
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Report upload choice
+        if: ${{ !matrix.collect_reports }}
+        shell: bash
+        run: echo "Testy przeszły; upload raportu świadomie wyłączony dla tego wariantu."
+
+  matrix_summary:
+    name: Matrix summary
+    runs-on: ubuntu-24.04
+    needs: static_tests
+    if: ${{ always() }}
+    permissions: {}
+
+    steps:
+      - name: Evaluate matrix result
+        shell: bash
+        env:
+          STATIC_RESULT: ${{ needs.static_tests.result }}
+        run: |
+          printf 'static_tests: %s\n' "$STATIC_RESULT"
+          {
+            echo "### Matrix summary"
+            echo ""
+            echo "| Grupa | Wynik |"
+            echo "|---|---|"
+            echo "| static_tests | $STATIC_RESULT |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$STATIC_RESULT" != "success" ]; then
+            printf '::error title=Matrix summary::Grupa static_tests zakończyła się wynikiem %s.\n' "$STATIC_RESULT"
+            exit 1
+          fi
+
+          echo "Wszystkie warianty static_tests zakończyły się sukcesem."
