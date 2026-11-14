@@ -212,6 +212,8 @@ jobs:
 
   backend:
     name: Backend
+    needs: [changes]
+    if: ${{ needs.changes.outputs.backend == 'true' }}
     uses: ./.github/workflows/backend.yml
     with:
       configuration: Release
@@ -220,6 +222,8 @@ jobs:
 
   frontend:
     name: Frontend
+    needs: [changes]
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
     runs-on: ubuntu-24.04
 
     outputs:
@@ -299,6 +303,8 @@ jobs:
     name: Reports summary
     runs-on: ubuntu-24.04
     needs: [backend, frontend]
+    # Run when at least one component ran and none failed.
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && contains(needs.*.result, 'success') }}
 
     steps:
       - name: Check fresh workspace
@@ -312,12 +318,14 @@ jobs:
           echo "Workspace is clean; no reports from previous jobs"
 
       - name: Download backend report
+        if: ${{ needs.backend.result == 'success' }}
         uses: actions/download-artifact@v4
         with:
           name: ${{ needs.backend.outputs.report_name }}
           path: incoming/backend
 
       - name: Download frontend report
+        if: ${{ needs.frontend.result == 'success' }}
         uses: actions/download-artifact@v4
         with:
           name: ${{ needs.frontend.outputs.report_name }}
@@ -327,11 +335,84 @@ jobs:
         shell: bash
         run: |
           echo "Downloaded files:"
-          find incoming -type f -print
+          find incoming -type f -print 2>/dev/null || true
 
           echo "Report summary:"
-          printf 'Backend files: '
-          find incoming/backend -type f | wc -l
+          for component in backend frontend; do
+            if [ -d "incoming/$component" ]; then
+              printf '%s files: %s\n' "$component" "$(find "incoming/$component" -type f | wc -l)"
+            else
+              printf '%s: skipped (not required)\n' "$component"
+            fi
+          done
 
-          printf 'Frontend files: '
-          find incoming/frontend -type f | wc -l
+  ci-required:
+    name: ci-required
+    runs-on: ubuntu-24.04
+    needs: [changes, backend, frontend]
+    if: ${{ always() }}
+    permissions: {}
+
+    steps:
+      - name: Evaluate required checks
+        shell: bash
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          BACKEND_REQUIRED: ${{ needs.changes.outputs.backend }}
+          FRONTEND_REQUIRED: ${{ needs.changes.outputs.frontend }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+        run: |
+          errors=0
+
+          fail() {
+            printf '::error title=ci-required::%s\n' "$1"
+            errors=$((errors + 1))
+          }
+
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            fail "Detekcja zmian zakończyła się wynikiem '$CHANGES_RESULT', oczekiwano 'success'."
+          fi
+
+          check_component() {
+            local component="$1" required="$2" result="$3"
+
+            case "$required" in
+              true)
+                if [ "$result" != "success" ]; then
+                  fail "$component jest wymagany, ale zakończył się wynikiem '$result'."
+                fi
+                ;;
+              false)
+                if [ "$result" != "skipped" ]; then
+                  fail "$component nie jest wymagany, ale ma wynik '$result' zamiast 'skipped'."
+                fi
+                ;;
+              *)
+                fail "Nieprawidłowa flaga $component: '$required' (oczekiwano 'true' lub 'false')."
+                ;;
+            esac
+          }
+
+          check_component backend "$BACKEND_REQUIRED" "$BACKEND_RESULT"
+          check_component frontend "$FRONTEND_REQUIRED" "$FRONTEND_RESULT"
+
+          {
+            echo "### ci-required"
+            echo ""
+            echo "| Job | Wymagany | Wynik |"
+            echo "|---|---|---|"
+            echo "| changes | - | $CHANGES_RESULT |"
+            echo "| backend | $BACKEND_REQUIRED | $BACKEND_RESULT |"
+            echo "| frontend | $FRONTEND_REQUIRED | $FRONTEND_RESULT |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          printf 'changes=%s backend=%s/%s frontend=%s/%s\n' \
+            "$CHANGES_RESULT" "$BACKEND_REQUIRED" "$BACKEND_RESULT" \
+            "$FRONTEND_REQUIRED" "$FRONTEND_RESULT"
+
+          if [ "$errors" -gt 0 ]; then
+            exit 1
+          fi
+
+          echo "All required checks passed."
