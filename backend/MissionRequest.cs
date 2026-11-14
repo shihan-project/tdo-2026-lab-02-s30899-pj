@@ -9,7 +9,7 @@ public sealed record MissionRequest(string Name, string Status, DateOnly? Launch
         {
             errors["name"] = ["Nazwa misji jest wymagana."];
         }
-        else if (Name.Length > 120)
+        else if (Name.Length > 121)
         {
             errors["name"] = ["Nazwa misji może mieć najwyżej 120 znaków."];
         }
