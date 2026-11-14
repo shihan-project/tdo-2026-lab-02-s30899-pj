@@ -1,0 +1,94 @@
+name: Inspect CI
+
+on:
+  workflow_run:
+    workflows: [Mission Control CI]
+    types: [completed]
+
+permissions:
+  actions: read
+
+jobs:
+  inspect:
+    name: Inspect CI metadata
+    runs-on: ubuntu-24.04
+    # Trust boundary: only a successful push to main of this repository,
+    # produced by the expected CI workflow file.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.name == 'Mission Control CI' &&
+      github.event.workflow_run.path == '.github/workflows/ci.yml'
+
+    steps:
+      - name: Download producer metadata
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+          name: ci-metadata-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: received
+
+      - name: Validate and summarize metadata
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
+          EXPECTED_RUN_ID: ${{ github.event.workflow_run.id }}
+          EXPECTED_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          file=received/metadata.json
+
+          if [ ! -f "$file" ]; then
+            printf '::error title=inspect-ci::Brak pliku metadata.json w artefakcie producenta.\n'
+            exit 1
+          fi
+
+          # Treat the file strictly as data: validate its exact shape with jq.
+          if ! jq -e '
+            type == "object"
+            and (keys == ["run_attempt", "run_id", "schema_version", "sha"])
+            and .schema_version == 1
+            and (.sha | type == "string" and test("^[0-9a-f]{40}$"))
+            and (.run_id | type == "number" and . > 0 and floor == .)
+            and (.run_attempt | type == "number" and . > 0 and floor == .)
+          ' "$file" > /dev/null; then
+            printf '::error title=inspect-ci::Nieprawidłowy schemat metadanych producenta.\n'
+            exit 1
+          fi
+
+          sha=$(jq -r '.sha' "$file")
+          run_id=$(jq -r '.run_id' "$file")
+          run_attempt=$(jq -r '.run_attempt' "$file")
+
+          errors=0
+          if [ "$sha" != "$EXPECTED_SHA" ]; then
+            printf '::error title=inspect-ci::SHA w metadanych nie zgadza się z workflow_run.head_sha.\n'
+            errors=$((errors + 1))
+          fi
+          if [ "$run_id" != "$EXPECTED_RUN_ID" ]; then
+            printf '::error title=inspect-ci::run_id w metadanych nie zgadza się z workflow_run.id.\n'
+            errors=$((errors + 1))
+          fi
+          if [ "$run_attempt" != "$EXPECTED_ATTEMPT" ]; then
+            printf '::error title=inspect-ci::run_attempt w metadanych nie zgadza się z workflow_run.run_attempt.\n'
+            errors=$((errors + 1))
+          fi
+          if [ "$errors" -gt 0 ]; then
+            exit 1
+          fi
+
+          printf 'Producer run: %s (attempt %s)\n' "$run_id" "$run_attempt"
+          printf 'Producer SHA: %s\n' "$sha"
+          printf 'Consumer run: %s (attempt %s)\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+
+          {
+            echo "### Inspect CI"
+            echo ""
+            echo "| Pole | Wartość |"
+            echo "|---|---|"
+            echo "| Producer run | $run_id (attempt $run_attempt) |"
+            echo "| Producer SHA | \`$sha\` |"
+            echo "| Consumer run | $GITHUB_RUN_ID (attempt $GITHUB_RUN_ATTEMPT) |"
+          } >> "$GITHUB_STEP_SUMMARY"

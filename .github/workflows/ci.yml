@@ -138,6 +138,31 @@ jobs:
             core.info(`Backend required: ${backend}`);
             core.info(`Frontend required: ${frontend}`);
 
+  ci-metadata:
+    name: CI metadata
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Write metadata file
+        shell: bash
+        run: |
+          mkdir -p ci-metadata
+          jq -n \
+            --arg sha "$GITHUB_SHA" \
+            --argjson run_id "$GITHUB_RUN_ID" \
+            --argjson run_attempt "$GITHUB_RUN_ATTEMPT" \
+            '{schema_version: 1, sha: $sha, run_id: $run_id, run_attempt: $run_attempt}' \
+            > ci-metadata/metadata.json
+          cat ci-metadata/metadata.json
+
+      - name: Upload metadata artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-metadata-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-metadata/metadata.json
+          retention-days: 7
+          if-no-files-found: error
+
   pr-comment:
     name: PR change summary comment
     runs-on: ubuntu-24.04
