@@ -23,6 +23,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Prepare report metadata
+        id: metadata
+        shell: bash
+        run: |
+          printf 'report_name=backend-tests-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          printf 'REPORT_COMPONENT=backend\n' >> "$GITHUB_ENV"
+
+      - name: Read report metadata
+        env:
+          REPORT_NAME: ${{ steps.metadata.outputs.report_name }}
+        shell: bash
+        run: |
+          printf 'Report: %s\n' "$REPORT_NAME"
+          printf 'Component: %s\n' "$REPORT_COMPONENT"
+
       - name: Pokaż etykietę projektu
         run: |
           echo "Uruchamiam CI dla projektu: $LAB_LABEL"
@@ -80,7 +95,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: backend-tests-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ steps.metadata.outputs.report_name }}
           path: TestResults/backend.trx
           retention-days: 7
           if-no-files-found: warn
@@ -97,6 +112,21 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Prepare report metadata
+        id: metadata
+        shell: bash
+        run: |
+          printf 'report_name=frontend-tests-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          printf 'REPORT_COMPONENT=frontend\n' >> "$GITHUB_ENV"
+
+      - name: Read report metadata
+        env:
+          REPORT_NAME: ${{ steps.metadata.outputs.report_name }}
+        shell: bash
+        run: |
+          printf 'Report: %s\n' "$REPORT_NAME"
+          printf 'Component: %s\n' "$REPORT_COMPONENT"
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -139,7 +169,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: frontend-tests-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ steps.metadata.outputs.report_name }}
           path: frontend/test-results/
           retention-days: 7
           if-no-files-found: warn
