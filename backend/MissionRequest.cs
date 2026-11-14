@@ -2,6 +2,7 @@ namespace MissionControl.Api;
 
 public sealed record MissionRequest(string Name, string Status, DateOnly? LaunchDate)
 {
+    // Zwraca błędy walidacji pogrupowane według nazwy pola.
     public Dictionary<string, string[]> GetValidationErrors()
     {
         var errors = new Dictionary<string, string[]>();
