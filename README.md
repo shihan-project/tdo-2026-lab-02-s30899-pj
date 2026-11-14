@@ -251,3 +251,4 @@ W workflow zastosowano `actions/cache@v4`:
 Pomiary wykonano za pomocą `time npm ci`, porównując czas rzeczywisty (`real`). Dokładne trafienie cache było najszybsze. Po zmianie lockfile użyto poprzedniego cache przez `restore-keys`, natomiast nowy namespace wymusił pobranie zależności bez wcześniejszego cache.
 
 Wyniki pokazują poprawne działanie mechanizmu cache, choć pojedyncze pomiary mogą się różnić ze względu na obciążenie runnerów i warunki sieciowe.
+Pomiary są orientacyjne i warto je powtórzyć kilka razy przed wyciąganiem wniosków.
