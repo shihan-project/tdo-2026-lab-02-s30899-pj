@@ -2,6 +2,11 @@ name: Matrix lab
 
 on:
   workflow_dispatch:
+    inputs:
+      include-debug:
+        description: Dodaj wariant Debug do dynamicznej macierzy
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -63,10 +68,109 @@ jobs:
         shell: bash
         run: echo "Testy przeszły; upload raportu świadomie wyłączony dla tego wariantu."
 
+  plan:
+    name: Plan matrix
+    runs-on: ubuntu-24.04
+    permissions: {}
+
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+
+    steps:
+      - name: Build and validate plan
+        id: matrix
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          INCLUDE_DEBUG: ${{ inputs['include-debug'] }}
+        with:
+          script: |
+            const includeDebug = process.env.INCLUDE_DEBUG;
+            if (includeDebug !== 'true' && includeDebug !== 'false') {
+              core.setFailed(`Nieprawidłowa wartość include-debug: '${includeDebug}' (oczekiwano 'true' lub 'false').`);
+              return;
+            }
+
+            const plan = { include: [{ configuration: 'Release', lane: 'release' }] };
+            if (includeDebug === 'true') {
+              plan.include.push({ configuration: 'Debug', lane: 'debug' });
+            }
+
+            // Validate the plan before publishing it as an output.
+            const allowed = { Release: 'release', Debug: 'debug' };
+            const expectedCount = includeDebug === 'true' ? 2 : 1;
+            const errors = [];
+            const entries = plan.include;
+
+            if (!Array.isArray(entries) || entries.length !== expectedCount) {
+              errors.push(`Oczekiwano ${expectedCount} wpisów planu, jest ${entries?.length}.`);
+            }
+            for (const entry of entries ?? []) {
+              const keys = Object.keys(entry).sort().join(',');
+              if (keys !== 'configuration,lane') {
+                errors.push(`Nieoczekiwane pola wpisu: ${keys}.`);
+              } else if (!Object.hasOwn(allowed, entry.configuration)) {
+                errors.push(`Niedozwolona konfiguracja: ${entry.configuration}.`);
+              } else if (allowed[entry.configuration] !== entry.lane) {
+                errors.push(`Lane ${entry.lane} nie pasuje do konfiguracji ${entry.configuration}.`);
+              }
+            }
+            const lanes = (entries ?? []).map(entry => entry.lane);
+            if (new Set(lanes).size !== lanes.length) {
+              errors.push('Powtórzone lane w planie.');
+            }
+            if (!(entries ?? []).some(entry => entry.configuration === 'Release')) {
+              errors.push('Plan nie zawiera wariantu Release.');
+            }
+
+            if (errors.length > 0) {
+              core.setFailed(`Nieprawidłowy plan macierzy: ${errors.join(' ')}`);
+              return;
+            }
+
+            core.info(JSON.stringify(plan, null, 2));
+            core.setOutput('matrix', JSON.stringify(plan));
+
+  dynamic_tests:
+    name: Dynamic ${{ matrix.lane }} (${{ matrix.configuration }})
+    runs-on: ubuntu-24.04
+    needs: plan
+    if: ${{ needs.plan.result == 'success' }}
+
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Backend check
+        id: backend-check
+        uses: ./.github/actions/backend-check
+        with:
+          configuration: ${{ matrix.configuration }}
+
+      - name: Upload test report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamic-${{ matrix.lane }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: TestResults/backend.trx
+          retention-days: 7
+          if-no-files-found: warn
+
   matrix_summary:
     name: Matrix summary
     runs-on: ubuntu-24.04
-    needs: static_tests
+    needs: [static_tests, plan, dynamic_tests]
     if: ${{ always() }}
     permissions: {}
 
@@ -75,19 +179,33 @@ jobs:
         shell: bash
         env:
           STATIC_RESULT: ${{ needs.static_tests.result }}
+          PLAN_RESULT: ${{ needs.plan.result }}
+          DYNAMIC_RESULT: ${{ needs.dynamic_tests.result }}
         run: |
-          printf 'static_tests: %s\n' "$STATIC_RESULT"
+          printf 'static_tests: %s\nplan: %s\ndynamic_tests: %s\n' \
+            "$STATIC_RESULT" "$PLAN_RESULT" "$DYNAMIC_RESULT"
           {
             echo "### Matrix summary"
             echo ""
             echo "| Grupa | Wynik |"
             echo "|---|---|"
             echo "| static_tests | $STATIC_RESULT |"
+            echo "| plan | $PLAN_RESULT |"
+            echo "| dynamic_tests | $DYNAMIC_RESULT |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if [ "$STATIC_RESULT" != "success" ]; then
-            printf '::error title=Matrix summary::Grupa static_tests zakończyła się wynikiem %s.\n' "$STATIC_RESULT"
+          errors=0
+          for pair in "static_tests:$STATIC_RESULT" "plan:$PLAN_RESULT" "dynamic_tests:$DYNAMIC_RESULT"; do
+            group="${pair%%:*}"
+            result="${pair#*:}"
+            if [ "$result" != "success" ]; then
+              printf '::error title=Matrix summary::Grupa %s zakończyła się wynikiem %s.\n' "$group" "$result"
+              errors=$((errors + 1))
+            fi
+          done
+
+          if [ "$errors" -gt 0 ]; then
             exit 1
           fi
 
-          echo "Wszystkie warianty static_tests zakończyły się sukcesem."
+          echo "Wszystkie grupy macierzy zakończyły się sukcesem."
