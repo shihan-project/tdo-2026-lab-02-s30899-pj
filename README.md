@@ -251,3 +251,44 @@ W workflow zastosowano `actions/cache@v4`:
 Pomiary wykonano za pomocą `time npm ci`, porównując czas rzeczywisty (`real`). Dokładne trafienie cache było najszybsze. Po zmianie lockfile użyto poprzedniego cache przez `restore-keys`, natomiast nowy namespace wymusił pobranie zależności bez wcześniejszego cache.
 
 Wyniki pokazują poprawne działanie mechanizmu cache, choć pojedyncze pomiary mogą się różnić ze względu na obciążenie runnerów i warunki sieciowe.
+## Dziennik zadań
+
+Run = ID runu GitHub Actions (`/actions/runs/<ID>`), SHA = skrót commita.
+
+| Zad. | PR / run | SHA | Oczekiwane | Zaobserwowane |
+|---|---|---|---|---|
+| 1 | push / 42117683076 | 3458d45 | pierwszy workflow, job z dwoma krokami | ✓ zielony |
+| 2 | push / 42118518945 | 9e66854 | checkout i SDK z `global.json` | ✓ zielony |
+| 3 | PR #1 / 42120386758 | ed4c5ed | CI na PR do `main` | ✓ zielony |
+| 4 | PR #2 / 42121508900 (dispatch) | b00c06b | ręczny start z `main` | ✓ zielony |
+| 5 | PR #3 / 42121831595 → 42122147758 | 9ecbf94 → 5001818 | celowy błąd czerwony, po usunięciu zielony | ✗ → ✓ |
+| 6 | PR #4 / 42125499908 | 3a4a81f | trzy lockfiles, build i testy | ✓ zielony |
+| 7 | PR #5 / 42126299776 → 42127750812 | dad9f26 → 786562b | CI backendu z testami | ✗ (ścieżki projektów) → ✓ |
+| 8 | PR #6 / 42129284756 | 3b0178b | frontend jako osobny, równoległy job | ✓ zielony |
+| 9 | PR #7 / 42130756040, 42131888349 → 42132337086 | 0729b0c, 1b70bb3 → 294220b | regresja i nieaktualny lockfile czerwone, poprawki zielone | ✗, ✗ → ✓ |
+| 10 | PR #8 / 42133307267 → 42133647397 | 959ce6c → 7d326cd | raport do pobrania mimo błędu testu | ✗ z artefaktem → ✓ |
+| 11 | PR #9 / 42134439106 → 42134904889, 42135343519 | 5acf7bf → 1bc8461 | jawne vars, fikcyjny sekret, minimalny token | ✗ (składnia kroku) → ✓, dispatch ✓ |
+| 12 | PR #10 / 42136744306 → 42137055251 | 6726d5e → 84ed20c | czerwony check blokuje merge, bez bypass | ✗ merge zablokowany → ✓ |
+| 13 | PR #11 / 42137988235, 42268231916, 42268880362 | 63ea119, b2b45dd, 9f29a90 | cold, warm, nowy lockfile, nowy namespace | ✓ czasy w tabeli wyżej |
+| 14 | PR #12 / 43614997729 | c887bfb | output kroku i `GITHUB_ENV` w kolejnych krokach | ✓ zielony |
+| 15 | PR #13 / 43616099446 | 3c2aeb2 | raporty z dwóch jobów pobrane w podsumowaniu | ✓ zielony |
+| 16 | PR #14 / 43617734831 | 8571507 | zmiana workflow: `true`/`true` i komentarz | ✓, rerun aktualizuje komentarz |
+| 16 | test / 43618752144, 43619093945, 43619410520 | 490fef3, 4663e76, 53e0744 | backend `true`/`false`, README `false`/`false`, fork bez komentarza | ✓ zgodne, fork: komentarz *skipped* |
+| 17 | PR #18 / 43643336239 | 54d2dd0 | composite: te same 19 testów, upload z outputu | ✓ zielony |
+| 17 | test / 43643699428, 43643857903 | ee8a0cf, 47bb027 | zła konfiguracja i regresja czerwone | ✗ czytelny błąd, ✗ z raportem |
+| 18 | PR #21 / 43644412765, 43644811422 | e532c93, c067f31 | reusable `Backend / Backend`, retencja z inputu, regresja blokuje merge | ✓, ✗ merge zablokowany |
+| 19 | PR #23 / 43645381666 | 4f26e8a | 2 komponenty, gate zielony | ✓ |
+| 19 | test / 43646207203, 43646221686, 43646233359 | b732f71, b298104, 55b30c4 | 0 i 1 komponent: pominięte jobs, gate zielony | ✓ bez *Expected* po zmianie rulesetu |
+| 19 | test / 43647873803, 43647887074 | a4cf895, 3bcbffe | regresja i uszkodzona detekcja: gate czerwony | ✗ merge zablokowany |
+| 19 | PR #29 / 43648423794 | ff70f60, 9efe610 | poprawka warunku `Reports summary` | ✓ przy 0 komponentów *skipped* |
+| 20 | PR #30 / 43649638457 → 43649757986 | 106c959 | konsument pobiera artefakt producenta, zgodny SHA | ✓ różne ID, zgodny SHA |
+| 20 | 43649937489, 43649638457 att. 2–3 | d17f1ff, 106c959 | PR i przerwany run odrzucone, attempt zgodny | ✓ *skipped*, *skipped*, att. 3 ✓ |
+| 20 | PR #32, #33 / 43651054638 → 43651375289 | 6ddc2fa → d560fb4 | zły schemat daje błąd, po cofnięciu zielony | ✗ „Nieprawidłowy schemat” → ✓ |
+| 21 | PR #34 / 43651867586, push 43652234964 | cfe01c7, 966cba2 | zmiana workflow: tylko artefakt; push: pełne wydanie | ✓ adnotacja, `thesis-v1.43652234964.1` |
+| 21 | PR #35 / 43652516538 att. 1–2, 43653981095 | 100c856, 9b8aa69 | prerelease z PR TeX-only, rerun bez kolizji, poprawka: nowe wydanie | ✓ 3 odrębne prerelease |
+| 21 | push / 43654206091 | 0ffbd94 | pełne wydanie po merge | ✓ `thesis-v1.43654206091.1` |
+| 21 | test / 43654485302, fork 43654848681 | 6b08e3d, 4ada4d4 | błąd kompilacji bez wydania; fork tylko artefakt | ✗ bez artefaktu, ✓ publikacja *skipped* |
+| 22 | PR #38 / 43730381396 | 483aad5 | 3 warianty `include`/`exclude`, summary zielone | ✓ |
+| 22 | dispatch / 43730802800 → 43731987000 | ff7c37a → 3a24e3e | błąd Debug: summary czerwone mimo Release ✓ | ✗ → ✓ |
+| 23 | PR #39 / 43733780987, 43733787539 | bdd6373 | `include-debug` false: Release; true: Release + Debug | ✓ zgodne |
+| 23 | dispatch / 43734543974, 43734967153 | 18fa79b, aab79d6 | plan z `Preview` i błąd Debug: summary czerwone | ✗ plan odrzucony, ✗ Debug |
